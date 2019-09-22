@@ -59,6 +59,6 @@ if __name__ == "__main__":
 
     else:
         # do the full-rfcat thing
-        d = RfCat(ifo.index, debug=False)
+        d = RfCat(ifo.index, debug=True)
         d.rf_redirection((sys.stdin, sys.stdout))
 

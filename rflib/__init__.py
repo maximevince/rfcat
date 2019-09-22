@@ -5,7 +5,8 @@ from __future__ import absolute_import
 
 from builtins import str
 from builtins import range
-from .chipcon_nic import *
+#from .chipcon_nic import *
+from .cc1101_nic import *
 import rflib.bits as rfbits
 
 RFCAT_START_SPECAN  = 0x40
@@ -202,7 +203,8 @@ def cleanupInteractiveAtExit():
 
 def interactive(idx=0, DongleClass=RfCat, intro=''):
     global d
-    import rflib.chipcon_nic as rfnic
+    #import rflib.chipcon_nic as rfnic
+    import rflib.cc1101_nic as rfnic
     import atexit
 
     d = DongleClass(idx=idx)
