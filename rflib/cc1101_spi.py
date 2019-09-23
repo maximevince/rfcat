@@ -19,7 +19,7 @@ import struct
 import select
 import threading
 import wiringpi
-import binascii
+from binascii import hexlify
 
 from . import bits
 from .cc1101defs import *
@@ -323,6 +323,8 @@ class SPIDongle(object):
         startTime = time.time()
         self.recv_event.clear() # an event is only interesting if we've already failed to find our message
 
+        raise("someone tried to recv")
+
         while (time.time() - startTime)*1000 < wait:
             try:
                 msg = bytes([0,0,0,0,0,0,0,0,0,0,0,0,0])
@@ -399,6 +401,29 @@ class SPIDongle(object):
                         #if self._debug: print ("rsema.UNlocked", "rsema.locked")[self.rsema.locked()],4
             return retval
 
+    def readreg(self, reg):
+        msg = struct.pack("<B", reg + READ) + bytearray(1)
+        retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
+        if self._debug: print("RD - STATE: {:x} retlen {}" .format(bytes(retdata)[0], retlen))
+        return int(retdata[1])
+
+    def writereg(self, reg, val):
+        msg = struct.pack("<BB", reg + WRITE, val)
+        retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
+
+    def readburst(self, reg, bytecount):
+        msg = struct.pack("<B", reg + READ + BURST) + bytearray(bytecount)
+        retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
+        if self._debug: print("RB - STATE: {:x}" .format(bytes(retdata)[0]))
+        return retdata[1:]
+
+    def writeburst(self, reg, data):
+        bytecount = len(data) - 1
+        msg = struct.pack("<B", reg + WRITE + BURST) + bytearray(bytecount)
+        retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
+        if self._debug: print("RB - STATE: {:x}" .format(bytes(retdata)[0]))
+        return retdata[1:]
+
     def send(self, app, cmd, buf, wait=SPI_TX_WAIT):
         if cmd == SYS_CMD_PEEK:
             bytecount, addr = struct.unpack("<HB", buf)
@@ -409,112 +434,106 @@ class SPIDongle(object):
             msg = struct.pack("<B", addr) + bytearray(bytecount)
             if self._debug: print("PEEK {} b @ 0x{:x}".format(bytecount, addr))
             retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
-            if self._debug: print("PEEK RX: 0x{}".format(binascii.hexlify(retdata[1:])))
+            if self._debug: print("PEEK RX: 0x{}".format(hexlify(retdata[1:])))
             if self._debug: print("STATE: {:x}" .format(bytes(retdata)[0]))
             return retdata[1:], datetime.now()
 
         elif cmd == SYS_CMD_POKE:
-            if self._debug: print("cmd: POKE     buf: {}".format(buf.encode("hex")))
-            raise("Not implemented yet")
+            #r, t = self.send(APP_SYSTEM, SYS_CMD_POKE, struct.pack("<B", addr) + data)
+            addr, = struct.unpack("<B", buf[0])
+            if (len(buf) > 1):
+                data = buf[1:]
+                print("Got poke: 0x{}".format(hexlify(buf)))
+                return self.writeburst(addr, data)
+            else:
+                self.writereg(addr + WRITE, 0x00) # STROBE
+            if self._debug: print("cmd: POKE @ 0x{:x}     buf: {}".format(addr, buf.encode("hex")))
+            return None, datetime.now()
 
         elif cmd == SYS_CMD_POKE_REG:
-            if self._debug: print("cmd: POKE_REG buf: {}".format(buf.encode("hex")))
+            #r, t = self.send(APP_SYSTEM, SYS_CMD_POKE_REG, struct.pack("<B", addr) + data)
+            addr, = struct.unpack("<B", buf)
+            if self._debug: print("cmd: POKE_REG @ 0x{:x} buf: {}".format(addr, buf.encode("hex")))
             raise("Not implemented yet")
 
         elif cmd == SYS_CMD_PARTNUM:
-            addr = PARTNUM + BURST + READ
-            bytecount = 1
-            msg = struct.pack("<B", addr) + bytearray(bytecount)
-            if self._debug: print("PARTNUM -> SPI: 0x{}".format(binascii.hexlify(msg)))
-            retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
-            if self._debug: print("STATE: {:x}" .format(bytes(retdata)[0]))
-            print("PARTNUM: 0x{:x}" .format(bytes(retdata)[1]))
-            return retdata[1:], datetime.now()
+            partnum = self.readburst(PARTNUM, 1)
+            print("PARTNUM: 0x{:x}" .format(bytes(partnum)[0]))
+            return partnum, datetime.now()
 
         elif cmd == SYS_CMD_VERSION:
-            addr = VERSION + BURST + READ
-            bytecount = 1
-            msg = struct.pack("<B", addr) + bytearray(bytecount)
-            if self._debug: print("VERSION -> SPI: 0x{}".format(binascii.hexlify(msg)))
-            retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
-            if self._debug: print("STATE: {:x}" .format(bytes(retdata)[0]))
-            print("VERSION: 0x{:x}" .format(bytes(retdata)[1]))
-            return retdata[1:], datetime.now()
+            version = self.readburst(VERSION, 1)
+            print("VERSION: 0x{:x}" .format(bytes(version)[0]))
+            return version, datetime.now()
 
         elif cmd == SYS_CMD_RFMODE:
-            #RFST_SIDLE                     = 0x04
-            #RFST_SNOP                      = 0x05
-            #RFST_SRX                       = 0x02
-            #RFST_STX                       = 0x03
-            rfmode = struct.unpack("<B", buf)
+            rfmode, = struct.unpack("<B", buf)
             if self._debug: print("RFMODE {}".format(rfmode))
+
             if rfmode == RFST_SRX:
-                #msg = struct.pack("<B")
-                retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
-            #msg = struct.pack("<B", addr) + bytearray(bytecount)
-            #if self._debug: print("VERSION -> SPI: 0x{}".format(binascii.hexlify(msg)))
-
-#// enter RX mode    (this is significant!  don't do lightly or quickly!)
-#void RxMode(void)
-#{
-#    if (rf_status != RFST_SRX)
-#    {
-#        MCSM1 &= 0xf0;
-#        MCSM1 |= 0x0f;
-#        rf_status = RFST_SRX;
-#
-#        startRX();
-#    }
-#}
-#
-#// enter TX mode
-#void TxMode(void)
-#{
-#    if (rf_status != RFST_STX)
-#    {
-#        MCSM1 &= 0xf0;
-#        MCSM1 |= 0x0a;
-#
-#        rf_status = RFST_STX;
-#        RFTX;
-#    }
-#}
-#
-#// enter IDLE mode  (this is significant!  don't do lightly or quickly!)
-#void IdleMode(void)
-#{
-#    if (rf_status != RFST_SIDLE)
-#    {
-#        {
-#            MCSM1 &= 0xf0;
-#            RFIM &= ~RFIF_IRQ_DONE;
-#            RFOFF;
-#
-##ifdef RFDMA
-#            DMAARM |= (0x80 | DMAARM0);                 // ABORT anything on DMA 0
-#            DMAIRQ &= ~1;
-##endif
-#
-#            S1CON &= ~(S1CON_RFIF_0|S1CON_RFIF_1);  // clear RFIF interrupts
-#            RFIF &= ~RFIF_IRQ_DONE;
-#        }
-#        rf_status = RFST_SIDLE;
-#        // FIXME: make this also adjust radio register settings for "return to" state?
-#    }
-#}
-
+                #// enter RX mode    (this is significant!  don't do lightly or quickly!)
+                #void RxMode(void)
+                #{
+                #    if (rf_status != RFST_SRX)
+                #    {
+                #        MCSM1 &= 0xf0;
+                #        MCSM1 |= 0x0f;
+                #        rf_status = RFST_SRX;
+                #
+                #        startRX();
+                #    }
+                #}
+                #RFST_SRX = 0x02
+                temp = self.readreg(MCSM1) & 0xf0
+                self.writereg(MCSM1, temp | 0x0f)
+            elif rfmode == RFST_STX:
+                #void TxMode(void)
+                #{
+                #    if (rf_status != RFST_STX)
+                #    {
+                #        MCSM1 &= 0xf0;
+                #        MCSM1 |= 0x0a;
+                #
+                #        rf_status = RFST_STX;
+                #        RFTX;
+                #    }
+                #}
+                #RFST_STX = 0x03
+                temp = self.readreg(MCSM1) & 0xf0
+                self.writereg(MCSM1, temp | 0x0a)
+            elif rfmode == RFST_SIDLE:
+                #// enter IDLE mode  (this is significant!  don't do lightly or quickly!)
+                #void IdleMode(void)
+                #{
+                #    if (rf_status != RFST_SIDLE)
+                #    {
+                #        {
+                #            MCSM1 &= 0xf0;
+                #            RFIM &= ~RFIF_IRQ_DONE;
+                #            RFOFF;
+                #
+                ##ifdef RFDMA
+                #            DMAARM |= (0x80 | DMAARM0);                 // ABORT anything on DMA 0
+                #            DMAIRQ &= ~1;
+                ##endif
+                #
+                #            S1CON &= ~(S1CON_RFIF_0|S1CON_RFIF_1);  // clear RFIF interrupts
+                #            RFIF &= ~RFIF_IRQ_DONE;
+                #        }
+                #        rf_status = RFST_SIDLE;
+                #        // FIXME: make this also adjust radio register settings for "return to" state?
+                #    }
+                #}
+                #RFST_SIDLE = 0x04
+                temp = self.readreg(MCSM1) & 0xf0
+                self.writereg(MCSM1, temp)
+            #RFST_SNOP                      = 0x05
 
         else:
             print("Unhandled cmd: {} buf: {}".format(cmd, buf.encode("hex")))
             raise("Unhandled cmd: {} buf: {}".format(cmd, buf.encode("hex")))
-            
-        #msg = "%c%c%s%s"%(app,cmd, struct.pack("<H",len(buf)),buf)
-        #print("send: app: {} cmd: {} buf: {} -> msg: {}".format(app, cmd, buf.encode("hex"), msg.encode("hex")))
+        return None, datetime.now() # self.recv(app, cmd, wait)
 
-        #if self._debug: print("Sent Msg",msg.encode("hex"))
-        #retlen, retdata = self._d.wiringPiSPIDataRW(0, msg)
-
-        return self.recv(app, cmd, wait)
 
     def reprDebugCodes(self, timeout=100):
         codes = self.getDebugCodes(timeout)

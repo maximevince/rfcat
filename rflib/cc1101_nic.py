@@ -364,7 +364,7 @@ class NICxx11(SPIDongle):
         '''
         set radio to IDLE state (transient)
         '''
-        self.poke(X_RFST, "%c"%RFST_SIDLE)
+        self.poke(SIDLE, '')
 
     def strobeModeFSTXON(self):
         '''
