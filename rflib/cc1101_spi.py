@@ -404,12 +404,14 @@ class SPIDongle(object):
     def readreg(self, reg):
         msg = struct.pack("<B", reg + READ) + bytearray(1)
         retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
-        if self._debug: print("RD - STATE: {:x} retlen {}" .format(bytes(retdata)[0], retlen))
-        return int(retdata[1])
+        if self._debug: print("RD@{:x} - STATE: {:x} val: {:x}".format(reg, bytes(retdata)[0], bytes(retdata)[1]))
+        return bytes(retdata)[1]
 
     def writereg(self, reg, val):
         msg = struct.pack("<BB", reg + WRITE, val)
         retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
+        if self._debug: print("WR@{:x} - STATE: {:x} val: {:x}".format(reg, bytes(retdata)[0], val))
+        return bytes(retdata)[1]
 
     def readburst(self, reg, bytecount):
         msg = struct.pack("<B", reg + READ + BURST) + bytearray(bytecount)
@@ -421,7 +423,7 @@ class SPIDongle(object):
         bytecount = len(data) - 1
         msg = struct.pack("<B", reg + WRITE + BURST) + bytearray(bytecount)
         retlen, retdata = self._d.wiringPiSPIDataRW(0, bytes(msg))
-        if self._debug: print("RB - STATE: {:x}" .format(bytes(retdata)[0]))
+        if self._debug: print("WB - STATE: {:x}" .format(bytes(retdata)[0]))
         return retdata[1:]
 
     def send(self, app, cmd, buf, wait=SPI_TX_WAIT):
@@ -441,10 +443,11 @@ class SPIDongle(object):
         elif cmd == SYS_CMD_POKE:
             #r, t = self.send(APP_SYSTEM, SYS_CMD_POKE, struct.pack("<B", addr) + data)
             addr, = struct.unpack("<B", buf[0])
+            print("POKE buf len: {}".format(len(buf)))
             if (len(buf) > 1):
                 data = buf[1:]
                 print("Got poke: 0x{}".format(hexlify(buf)))
-                return self.writeburst(addr, data)
+                return self.writeburst(addr, data), datetime.now()
             else:
                 self.writereg(addr + WRITE, 0x00) # STROBE
             if self._debug: print("cmd: POKE @ 0x{:x}     buf: {}".format(addr, buf.encode("hex")))
@@ -484,8 +487,8 @@ class SPIDongle(object):
                 #    }
                 #}
                 #RFST_SRX = 0x02
-                temp = self.readreg(MCSM1) & 0xf0
-                self.writereg(MCSM1, temp | 0x0f)
+                val = self.readreg(MCSM1) & 0xf0
+                self.writereg(MCSM1, val | 0x0f)
             elif rfmode == RFST_STX:
                 #void TxMode(void)
                 #{
@@ -652,7 +655,6 @@ class SPIDongle(object):
             pass
         
     def peek(self, addr, bytecount=1):
-        print("peek: bytecount {} addr {}".format(bytecount, addr))
         r, t = self.send(APP_SYSTEM, SYS_CMD_PEEK, struct.pack("<HB", bytecount, addr))
         return r
 

@@ -321,6 +321,7 @@ class NICxx11(SPIDongle):
         '''
         sets the radio state to "rfmode", and makes 
         '''
+        if self._debug: print("Setting RfMode: {} params: {}".format(rfmode, params))
         self._rfmode = rfmode
         r = self.send(APP_SYSTEM, SYS_CMD_RFMODE, "%c" % (self._rfmode) + parms)
 
@@ -387,7 +388,11 @@ class NICxx11(SPIDongle):
             #marcstate = self.radiocfg.marcstate
         #if self._debug: print("MARCSTATE: %x   returning to %x" % (marcstate, MARC_STATE_MAPPINGS[marcstate][2]) )
         #self.poke(X_RFST, "%c"%MARC_STATE_MAPPINGS[marcstate][2])
-        self.poke(X_RFST, "%c" % self._rfmode)
+
+        # VNZ was: self.poke(X_RFST, "%c" % self._rfmode)
+        if self._debug: print("MARCSTATE: %x   returning to %x" % (marcstate, MARC_STATE_MAPPINGS[marcstate][2]) )
+        # XXX: it "says" returning to marcstate[2], but it does not, actually
+        self.setRfMode(self._rfmode)
 
         
         
@@ -570,6 +575,7 @@ class NICxx11(SPIDongle):
         # we may be only changing PA_POWER, not power levels
         if power is not None:
             if mod == MOD_ASK_OOK and not invert:
+                except("PA_TABLE / PATABLE not yet implemented")
                 radiocfg.pa_table0= 0x00
                 radiocfg.pa_table1= power
             else:
